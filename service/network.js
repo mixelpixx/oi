@@ -1,6 +1,7 @@
 const { Configuration, OpenAIApi, default: OpenAI } = require('openai');
+const axios = require('axios');
 
-// Load environment variables (make sure to set OPENAI_API_KEY in .env file)
+// Load environment variables
 require('dotenv').config();
 
 // Initialize OpenAI API with your API key
@@ -9,6 +10,34 @@ const openai = new OpenAI({
     organisation: process.env.OPENAI_ORG_ID,
     project: "proj_KXJHh8FNqFn7EiKyvFjCJ32o" 
 });
+
+// Initialize other AI backends
+const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
+const localLLMUrl = process.env.LOCAL_LLM_URL || 'http://localhost:8080';
+
+const generateCodeWithHuggingFace = async (prompt, model = 'gpt2') => {
+    try {
+        const response = await axios.post(
+            `https://api-inference.huggingface.co/models/${model}`,
+            { inputs: prompt },
+            { headers: { Authorization: `Bearer ${huggingFaceToken}` } }
+        );
+        return response.data[0].generated_text;
+    } catch (error) {
+        console.error(`Error generating code with Hugging Face: ${error.message}`);
+        throw error;
+    }
+};
+
+const generateCodeWithLocalLLM = async (prompt) => {
+    try {
+        const response = await axios.post(localLLMUrl, { prompt });
+        return response.data.generated_text;
+    } catch (error) {
+        console.error(`Error generating code with local LLM: ${error.message}`);
+        throw error;
+    }
+};
 
 const processCodexResponse = (response) => {
   try {
@@ -74,4 +103,22 @@ const generateCode = async (prompt, model = 'gpt-3.5-turbo') => {
     }
 };
 
-module.exports = {generateCode};
+const generateCodeWithSelectedBackend = async (prompt, backend = 'openai', model = 'gpt-3.5-turbo') => {
+    switch (backend) {
+        case 'openai':
+            return generateCode(prompt, model);
+        case 'huggingface':
+            return generateCodeWithHuggingFace(prompt, model);
+        case 'local':
+            return generateCodeWithLocalLLM(prompt);
+        default:
+            throw new Error(`Unsupported backend: ${backend}`);
+    }
+};
+
+module.exports = {
+    generateCode,
+    generateCodeWithSelectedBackend,
+    generateCodeWithHuggingFace,
+    generateCodeWithLocalLLM
+};

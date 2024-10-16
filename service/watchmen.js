@@ -1,9 +1,10 @@
 const fs = require('fs');
 const chokidar = require('chokidar');
 const config = require('./config');
-const {generateCode} = require('./generate')
+const { generateCodeWithSelectedBackend } = require('./network');
+const { parsePrompts, insertGeneratedCode } = require('./promptParser');
 
-// Regex to match comments that follow your pattern: //> prompt <
+// This regex is now handled in promptParser.js
 const commentRegex = /\/\/>\s*(.*?)\s*<\//g;
 
 // Check for prompt message.
@@ -11,16 +12,20 @@ const checkForPromptAndGenerate = async (filePath) => {
     try {
         // Read the content of the changed file
         const fileContent = fs.readFileSync(filePath, 'utf8');
+        const prompts = parsePrompts(filePath);
 
-        // Find all matches of the comment pattern
-        let match;
-        while ((match = commentRegex.exec(fileContent)) !== null) {
-            const commentText = match[1].trim(); // Extract the text inside 
-            console.log(`Prompt found in ${filePath}: ${commentText}`);
-            console.log(`Prompt is ${commentText}`);
+        for (const prompt of prompts) {
+            console.log(`Prompt found in ${filePath}: ${prompt.content}`);
+            
+            // Get the AI backend and model from config
+            const aiBackend = await config.getConfigJsonValue('aiBackend') || 'openai';
+            const aiModel = await config.getConfigJsonValue('aiModel') || 'gpt-3.5-turbo';
 
-            // Now you can trigger the code generation or handle the prompt in any way
-            await generateCode(commentText);
+            // Generate code using the selected backend
+            const generatedCode = await generateCodeWithSelectedBackend(prompt.content, aiBackend, aiModel);
+
+            // Insert the generated code
+            insertGeneratedCode(filePath, generatedCode, prompt.start, prompt.end);
         }
     } catch (err) {
         console.error(`Error reading file ${filePath}:`, err);

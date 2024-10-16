@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 const { Command } = require('commander');
+const inquirer = require('inquirer');
 
 const { initializeProject } = require('./commands/initialize');
 const { depend } = require('./commands/depend');
 const { addIgnoreFiles } = require('./commands/ignore');
 
 const program = new Command();
+const config = require('./service/config');
 
 program
   .command('init')
@@ -18,15 +20,42 @@ program
   .option('--service <service>', 'Specify the service to use for code generation (codex, other)')
   .option('--api-key <key>', 'API key for the specified service')
   .option('--dry-run', 'Simulate the initialization process without making changes')
-  .action((options) => {
-    initializeProject(options);
+  .action(async (options) => {
+    if (!options.projectName) {
+      const answers = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'projectName',
+          message: 'Enter your project name:',
+          default: 'my-oi-project'
+        },
+        {
+          type: 'list',
+          name: 'aiBackend',
+          message: 'Choose an AI backend:',
+          choices: ['openai', 'huggingface', 'local']
+        },
+        {
+          type: 'input',
+          name: 'apiKey',
+          message: 'Enter your API key (if applicable):',
+          when: (answers) => answers.aiBackend !== 'local'
+        }
+      ]);
+      
+      options.projectName = answers.projectName;
+      options.service = answers.aiBackend;
+      options.apiKey = answers.apiKey;
+    }
+    
+    await initializeProject(options);
   });
 
 program
   .command('start')
   .description('Start watching files and upload them to Ollama')
   .action(() => {
-    const { startWatching } = require('./utils/watchmen');
+    const { startWatching } = require('./service/watchmen');
     console.log('Starting file watcher...');
     startWatching();
   });
@@ -52,5 +81,30 @@ program
     addIgnoreFiles(options.files);  // Call the function to add files to ignore list
   });
 
+program
+  .command('config')
+  .description('Update configuration settings')
+  .action(async () => {
+    const currentConfig = await config.getConfigJsonValue();
+    const answers = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'aiBackend',
+        message: 'Choose an AI backend:',
+        choices: ['openai', 'huggingface', 'local'],
+        default: currentConfig.aiBackend || 'openai'
+      },
+      {
+        type: 'input',
+        name: 'apiKey',
+        message: 'Enter your API key (if applicable):',
+        when: (answers) => answers.aiBackend !== 'local',
+        default: currentConfig.apiKey
+      }
+    ]);
+    
+    await config.updateConfig(answers);
+    console.log('Configuration updated successfully.');
+  });
 
 program.parse(process.argv);
